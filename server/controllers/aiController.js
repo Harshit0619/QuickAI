@@ -1,14 +1,14 @@
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import sql from "../configs/db.js";
 import axios from "axios";
 import { v2 as cloudinary } from "cloudinary";
 import fs from "fs";
 import pdf from 'pdf-parse/lib/pdf-parse.js';
+import { clerkClient } from "@clerk/express";
 
-const AI = new OpenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/"
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const geminiModelName = (process.env.GEMINI_MODEL || "gemini-2.0-flash").replace(/^models\//, "");
+const model = genAI.getGenerativeModel({ model: geminiModelName });
 
 export const generateArticle = async(req,res)=> {
         try {
@@ -21,18 +21,18 @@ export const generateArticle = async(req,res)=> {
                 return res.json({success:false , message : 'Free usage limit exceeded. Please upgrade to premium plan.'})
             }
 
-            const response = await AI.chat.completions.create({
-                model: "gemini-2.0-flash",
-                messages: [{
-                        role: "user",
-                        content: prompt,
-                    },
-                ],
-                temperature:0.7,
-                max_tokens : length,
+            const response = await model.generateContent({
+                contents: [{
+                    role: "user",
+                    parts: [{ text: prompt }],
+                }],
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: length,
+                },
             });
 
-            const content = response.choices[0].message.content
+            const content = response.response.text();
 
             await sql`INSERT INTO creations (user_id , prompt , content , type)
             VALUES (${userId} , ${prompt} , ${content} , 'article')`;
@@ -47,7 +47,12 @@ export const generateArticle = async(req,res)=> {
             res.json({success:true , content})
 
         } catch (error) {
-            console.log(error.message)
+            console.log("generateArticle Error:", JSON.stringify({
+                message: error.message,
+                status: error.status,
+                errorText: error.error_description || error.details,
+                fullError: error
+            }, null, 2));
             res.json({success:false , message : error.message})
         }
 }
@@ -64,18 +69,18 @@ export const generateBlogTitle = async(req,res)=> {
                 return res.json({success:false , message : 'Free usage limit exceeded. Please upgrade to premium plan.'})
             }
 
-            const response = await AI.chat.completions.create({
-                model: "gemini-2.0-flash",
-                messages: [{
-                        role: "user",
-                        content: prompt,
-                    },
-                ],
-                temperature:0.7,
-                max_tokens : 100,
+            const response = await model.generateContent({
+                contents: [{
+                    role: "user",
+                    parts: [{ text: prompt }],
+                }],
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 100,
+                },
             });
 
-            const content = response.choices[0].message.content
+            const content = response.response.text();
 
             await sql`INSERT INTO creations (user_id , prompt , content , type)
             VALUES (${userId} , ${prompt} , ${content} , 'blog-title')`;
@@ -90,7 +95,8 @@ export const generateBlogTitle = async(req,res)=> {
             res.json({success:true , content})
 
         } catch (error) {
-            console.log(error.message)
+            console.log("generateBlogTitle Error:", error);
+            console.log("Error response:", error.response?.data || error.message);
             res.json({success:false , message : error.message})
         }
 }
@@ -130,7 +136,8 @@ export const generateImage = async(req,res)=> {
             res.json({success:true , content: secure_url})
 
         } catch (error) {
-            console.log(error.message)
+            console.log("generateImage Error:", error);
+            console.log("Error response:", error.response?.data || error.message);
             res.json({success:false , message : error.message})
         }
 }
@@ -167,7 +174,8 @@ export const removeImageBackground = async(req,res) => {
             res.json({success:true , content: secure_url})
 
         } catch (error) {
-            console.log(error.message)
+            console.log("removeImageBackground Error:", error);
+            console.log("Error response:", error.response?.data || error.message);
             res.json({success:false , message : error.message})
         }
 }
@@ -176,7 +184,7 @@ export const removeImageBackground = async(req,res) => {
 export const removeImageObject = async(req,res) => {
         try {
             const {userId} = req.auth();
-            const {object} = req.body();
+            const {object} = req.body;
             const image = req.file;
             const plan = req.plan;
            
@@ -200,7 +208,8 @@ export const removeImageObject = async(req,res) => {
             res.json({success:true , content: imageUrl})
 
         } catch (error) {
-            console.log(error.message)
+            console.log("removeImageObject Error:", error);
+            console.log("Error response:", error.response?.data || error.message);
             res.json({success:false , message : error.message})
         }
 }
@@ -230,18 +239,18 @@ export const resumeReview = async(req,res) => {
              feedback on its strengths , weakness, and areas for improvement.
              Resume Content :\n\n${pdfData.text}`
 
-              const response = await AI.chat.completions.create({
-                model: "gemini-2.0-flash",
-                messages: [{
-                        role: "user",
-                        content: prompt,
-                    },
-                ],
-                temperature:0.7,
-                max_tokens : 1000,
+            const response = await model.generateContent({
+                contents: [{
+                    role: "user",
+                    parts: [{ text: prompt }],
+                }],
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 1000,
+                },
             });
 
-            const content = response.choices[0].message.content
+            const content = response.response.text();
 
         await sql`INSERT INTO creations (user_id , prompt , content , type)
         VALUES (${userId} ,'Review the uploaded resume' , ${content} , 'resume-review')`;
@@ -250,7 +259,8 @@ export const resumeReview = async(req,res) => {
             res.json({success:true , content})
 
         } catch (error) {
-            console.log(error.message)
+            console.log("resumeReview Error:", error);
+            console.log("Error response:", error.response?.data || error.message);
             res.json({success:false , message : error.message})
         }
 }
