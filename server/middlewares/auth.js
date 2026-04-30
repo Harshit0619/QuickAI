@@ -5,14 +5,8 @@ import { clerkClient } from "@clerk/express";
 
 export const auth = async (req, res, next) => {
     try {
-        const authData = req.auth();
-        const { userId, has } = authData;
-
-        if (!userId) {
-            return res.status(401).json({ success: false, message: "Unauthorized: missing or invalid token" });
-        }
-
-        const hasPremiumPlan = has ? await has({ plan: 'premium' }) : false;
+        const { userId, has } = await req.auth();
+        const hasPremiumPlan = await has({ plan: 'premium' });
 
         const user = await clerkClient.users.getUser(userId);
 
@@ -30,6 +24,6 @@ export const auth = async (req, res, next) => {
         req.plan = hasPremiumPlan ? 'premium' : 'free';
         next();
     } catch (error) {
-        res.status(401).json({ success: false, message: error.message })
+        res.json({ success: false, message: error.message })
     }
 }
