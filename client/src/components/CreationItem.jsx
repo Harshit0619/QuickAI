@@ -22,7 +22,7 @@ const CreationItem = ({item}) => {
             ):(
                 <div className='mt-3 h-full overflow-y-scroll text-sm text-slate-700'>
                     <div className='reset-tw'> 
-                      <Markdown> {item.content} </Markdown> 
+                      <Markdown children={item.content} />
                     </div>
                 </div>
             ) } 
